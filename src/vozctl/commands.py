@@ -94,14 +94,33 @@ def match(raw_text: str) -> CommandMatch:
     )
 
 
+_last_typed_len: int = 0
+
+
 def _type_formatted(text: str) -> None:
+    global _last_typed_len
     from vozctl.actions import type_text
     type_text(text)
+    _last_typed_len = len(text)
 
 
 def _type_dictation(text: str) -> None:
+    global _last_typed_len
     from vozctl.actions import type_text
-    type_text(text + " ")
+    output = text + " "
+    type_text(output)
+    _last_typed_len = len(output)
+
+
+def _scratch_last() -> None:
+    """Delete the last typed text by sending backspaces."""
+    global _last_typed_len
+    if _last_typed_len > 0:
+        from vozctl.actions import press_key
+        for _ in range(_last_typed_len):
+            press_key("backspace")
+        log.info("Scratched %d characters", _last_typed_len)
+        _last_typed_len = 0
 
 
 # ──────────────────────────────────────────────────────────────
@@ -178,6 +197,14 @@ def cmd_end():
 @exact("delete that")
 def cmd_delete():
     actions.press_key("backspace")
+
+@exact("scratch that")
+def cmd_scratch():
+    _scratch_last()
+
+@exact("scratch")
+def cmd_scratch_alt():
+    _scratch_last()
 
 @exact("tab")
 def cmd_tab():

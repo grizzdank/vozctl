@@ -141,7 +141,7 @@ def press_key(key: str, modifiers: list[str] | None = None) -> None:
     _post_key(keycode, flags, key_down=False)
 
 
-def type_text(text: str, interval: float = 0.008) -> None:
+def type_text(text: str, interval: float = 0.002) -> None:
     """Type a string by posting individual key events."""
     cg = _init_cg()
 
