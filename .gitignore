@@ -2,6 +2,10 @@
 models/*.onnx
 models/*.bin
 models/*.pt
+models/*.tar.bz2
+models/SHA256SUMS
+models/tokens.txt
+venv/
 
 # Build
 target/
