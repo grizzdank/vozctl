@@ -45,9 +45,9 @@ class VoiceActivityDetector:
 
     def pop_segment(self) -> np.ndarray:
         """Pop the next completed speech segment as float32 samples."""
-        segment = self._vad.front
+        # Read samples BEFORE pop — front returns a reference invalidated by pop()
+        samples = np.array(self._vad.front.samples, dtype=np.float32)
         self._vad.pop()
-        samples = np.array(segment.samples, dtype=np.float32)
         duration = len(samples) / 16000
         log.debug("VAD segment: %.2fs (%d samples)", duration, len(samples))
         return samples

@@ -199,6 +199,10 @@ class Engine:
             seg = vad.pop_segment()
             audio_duration = len(seg) / SAMPLE_RATE
 
+            if audio_duration < 0.2:
+                log.debug("Skipping short segment: %.2fs", audio_duration)
+                continue
+
             text, stt_elapsed = stt.transcribe(seg)
             dispatch_ts = time.monotonic()
 
