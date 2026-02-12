@@ -36,7 +36,9 @@ download() {
         return 0
     fi
     info "Downloading: $(basename "$dest")"
-    curl -L -C - --progress-bar -o "$dest" "$url"
+    # --retry 3 for transient failures, -C - for resume after partial downloads
+    curl -L -C - --retry 3 --retry-delay 5 --progress-bar -o "${dest}.tmp" "$url"
+    mv "${dest}.tmp" "$dest"
 }
 
 # ── Download Silero VAD ───────────────────────────────────────
@@ -86,17 +88,14 @@ done
 # ── Compute and store checksums ───────────────────────────────
 echo ""
 info "Computing checksums..."
-shasum -a 256 "$MODELS_DIR"/*.onnx "$MODELS_DIR"/tokens.txt > "$MODELS_DIR/SHA256SUMS"
+(cd "$MODELS_DIR" && shasum -a 256 *.onnx tokens.txt > SHA256SUMS)
 ok "Checksums written to $MODELS_DIR/SHA256SUMS"
 
-# ── Verify checksums if file already existed ──────────────────
-# On subsequent runs, verify against stored checksums
-if [[ -f "$MODELS_DIR/SHA256SUMS" ]]; then
-    if (cd "$MODELS_DIR" && shasum -a 256 -c SHA256SUMS --quiet 2>/dev/null); then
-        ok "All checksums verified"
-    else
-        fail "Checksum mismatch — models may be corrupted. Delete models/ and re-run."
-    fi
+# Verify checksums
+if (cd "$MODELS_DIR" && shasum -a 256 -c SHA256SUMS --quiet 2>/dev/null); then
+    ok "All checksums verified"
+else
+    fail "Checksum mismatch — models may be corrupted. Delete models/ and re-run."
 fi
 
 echo ""

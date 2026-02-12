@@ -31,15 +31,15 @@ class SpeechRecognizer:
                     "Run: ./scripts/download-models.sh"
                 )
 
-        config = sherpa_onnx.OfflineRecognizerConfig()
-        config.model_config.transducer.encoder = str(encoder)
-        config.model_config.transducer.decoder = str(decoder)
-        config.model_config.transducer.joiner = str(joiner)
-        config.model_config.tokens = str(tokens)
-        config.model_config.num_threads = 4
-        config.model_config.provider = "cpu"
-
-        self._recognizer = sherpa_onnx.OfflineRecognizer(config)
+        self._recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+            encoder=str(encoder),
+            decoder=str(decoder),
+            joiner=str(joiner),
+            tokens=str(tokens),
+            num_threads=4,
+            provider="cpu",
+            model_type="nemo_transducer",
+        )
         log.info("STT loaded: Parakeet TDT (%s)", model_dir)
 
     def transcribe(self, samples: np.ndarray) -> tuple[str, float]:
