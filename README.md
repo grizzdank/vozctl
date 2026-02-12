@@ -48,6 +48,8 @@ Two-model pipeline:
 
 🚧 **Pre-alpha / Research phase**
 
+Current implementation target: **macOS (Phase 0)**.
+
 See [docs/research/](docs/research/) for technical analysis and project brief.
 
 ## Getting Started

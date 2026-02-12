@@ -111,6 +111,13 @@ def match(raw_text: str) -> CommandMatch:
     If the VAD grouped multiple sentences, split and try each one.
     Precedence per chunk: exact → parameterized → formatter → NATO → ignore.
     """
+    # Preserve exact transcript text for explicit literal typing commands.
+    m = re.match(r"^\s*(?:type|insert)\s+(?P<text>.+?)\s*$", raw_text, re.IGNORECASE)
+    if m:
+        text = m.group("text")
+        log.info("Command [param-raw]: type_text → %r", text)
+        return CommandMatch(name="type_text", handler=cmd_type_text, args={"text": text}, kind="parameterized")
+
     normalized = _normalize(raw_text)
 
     # Try full text first

@@ -16,9 +16,9 @@ dependencies = [
     "sounddevice>=0.5",
     "numpy>=1.26",
     "pynput>=1.7",
-    "pyobjc-framework-Cocoa>=10.0",
-    "pyobjc-framework-Quartz>=10.0",
-    "pyobjc-framework-ApplicationServices>=10.0",
+    "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=10.0; sys_platform == 'darwin'",
+    "pyobjc-framework-ApplicationServices>=10.0; sys_platform == 'darwin'",
 ]
 
 [project.scripts]
