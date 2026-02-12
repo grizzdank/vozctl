@@ -76,10 +76,15 @@ _KEYCODES: dict[str, int] = {
     "f1": 0x7A, "f2": 0x78, "f3": 0x63, "f4": 0x76,
     "f5": 0x60, "f6": 0x61, "f7": 0x62, "f8": 0x64,
     "f9": 0x65, "f10": 0x6D, "f11": 0x67, "f12": 0x6F,
-    # Letters (lowercase)
-    **{chr(c): c - ord("a") for c in range(ord("a"), ord("z") + 1)},
+    # Letters — macOS keycodes follow physical QWERTY position, NOT alphabetical
+    "a": 0x00, "b": 0x0B, "c": 0x08, "d": 0x02, "e": 0x0E, "f": 0x03,
+    "g": 0x05, "h": 0x04, "i": 0x22, "j": 0x26, "k": 0x28, "l": 0x25,
+    "m": 0x2E, "n": 0x2D, "o": 0x1F, "p": 0x23, "q": 0x0C, "r": 0x0F,
+    "s": 0x01, "t": 0x11, "u": 0x20, "v": 0x09, "w": 0x0D, "x": 0x07,
+    "y": 0x10, "z": 0x06,
     # Digits
-    **{str(i): [0x1D, 0x12, 0x13, 0x14, 0x15, 0x17, 0x16, 0x1A, 0x1C, 0x19][i] for i in range(10)},
+    "0": 0x1D, "1": 0x12, "2": 0x13, "3": 0x14, "4": 0x15, "5": 0x17,
+    "6": 0x16, "7": 0x1A, "8": 0x1C, "9": 0x19,
     # Punctuation
     "-": 0x1B, "=": 0x18,
     "[": 0x21, "]": 0x1E,
@@ -87,6 +92,14 @@ _KEYCODES: dict[str, int] = {
     ",": 0x2B, ".": 0x2F,
     "/": 0x2C, "\\": 0x2A,
     "`": 0x32,
+}
+
+# Shifted punctuation → base keycode (shift is added automatically)
+_SHIFT_MAP: dict[str, str] = {
+    "~": "`", "!": "1", "@": "2", "#": "3", "$": "4", "%": "5",
+    "^": "6", "&": "7", "*": "8", "(": "9", ")": "0", "_": "-",
+    "+": "=", "{": "[", "}": "]", "|": "\\", ":": ";", '"': "'",
+    "<": ",", ">": ".", "?": "/",
 }
 
 # Characters that require shift
@@ -98,8 +111,8 @@ def _post_key(keycode: int, flags: int = 0, key_down: bool = True) -> None:
     cg = _init_cg()
     source = cg["source_create"](0)  # kCGEventSourceStatePrivate
     event = cg["create_kb"](source, keycode, key_down)
-    if flags:
-        cg["set_flags"](event, flags)
+    # Always set flags explicitly — even 0 — to clear stale modifier state
+    cg["set_flags"](event, flags)
     cg["post"](cg["tap"], event)
 
 
@@ -140,6 +153,14 @@ def type_text(text: str, interval: float = 0.008) -> None:
             keycode = _KEYCODES["return"]
         elif ch == "\t":
             keycode = _KEYCODES["tab"]
+        elif ch in _SHIFT_MAP:
+            # Shifted punctuation: ? → shift+/, ! → shift+1, etc.
+            base = _SHIFT_MAP[ch]
+            keycode = _KEYCODES.get(base)
+            if keycode is None:
+                log.debug("Skipping unmapped shifted char: %r", ch)
+                continue
+            flags = cg["shift"]
         elif ch.lower() in _KEYCODES:
             keycode = _KEYCODES[ch.lower()]
             if ch in _SHIFT_CHARS:
