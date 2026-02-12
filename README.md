@@ -73,4 +73,4 @@ Apache 2.0
 
 ---
 
-*Built by [LFG Consulting](https://lfgconsultants.com)* 🐙
+*voz + ctl = voice control* 🐙
