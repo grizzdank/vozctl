@@ -1,0 +1,25 @@
+# Models (large files)
+models/*.onnx
+models/*.bin
+models/*.pt
+
+# Build
+target/
+dist/
+build/
+*.egg-info/
+
+# Environment
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
