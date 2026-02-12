@@ -63,10 +63,8 @@ def parameterized(pattern: str, name: str):
     return decorator
 
 
-def match(raw_text: str) -> CommandMatch:
-    """Match text against commands (command mode). Precedence: exact → parameterized → formatter → dictation fallback."""
-    normalized = _normalize(raw_text)
-
+def _match_single(normalized: str) -> CommandMatch | None:
+    """Try to match a single normalized phrase. Returns None if no match."""
     # 1. Exact match
     if normalized in _EXACT:
         log.info("Command [exact]: %s", normalized)
@@ -104,7 +102,60 @@ def match(raw_text: str) -> CommandMatch:
             kind="exact",
         )
 
-    # 5. Dictation fallback (in command mode, engine will ignore this)
+    return None
+
+
+def match(raw_text: str) -> CommandMatch:
+    """Match text against commands (command mode).
+
+    If the VAD grouped multiple sentences, split and try each one.
+    Precedence per chunk: exact → parameterized → formatter → NATO → ignore.
+    """
+    normalized = _normalize(raw_text)
+
+    # Try full text first
+    result = _match_single(normalized)
+    if result:
+        return result
+
+    # Split on sentence boundaries and try each chunk
+    # Parakeet adds periods — split the raw text, normalize each part
+    sentences = re.split(r'[.!?]+', raw_text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+
+    if len(sentences) > 1:
+        handlers = []
+        for sent in sentences:
+            norm_sent = _normalize(sent)
+            if not norm_sent:
+                continue
+            r = _match_single(norm_sent)
+            if r:
+                handlers.append(r)
+            else:
+                log.info("Ignored (no match): %r", sent)
+
+        if handlers:
+            def run_all():
+                for h in handlers:
+                    try:
+                        if h.args and h.kind == "parameterized":
+                            h.handler(**h.args)
+                        else:
+                            h.handler()
+                    except Exception as e:
+                        log.error("Command %r failed: %s", h.name, e)
+
+            names = [h.name for h in handlers]
+            log.info("Multi-command: %s", names)
+            return CommandMatch(
+                name=f"multi:{'+'.join(names)}",
+                handler=run_all,
+                args={},
+                kind="exact",
+            )
+
+    # Dictation fallback (in command mode, engine will ignore this)
     log.info("Dictation: %r", raw_text)
     return CommandMatch(
         name="dictation",
@@ -292,10 +343,11 @@ def _try_nato_sequence(normalized: str) -> str | None:
     if len(words) < 2:
         return None  # single words handled by exact match
 
+    _CAP_PREFIXES = {"cap", "big", "tap", "hat", "hap"}
     result = []
     i = 0
     while i < len(words):
-        if words[i] == "cap" and i + 1 < len(words) and words[i + 1] in _NATO_WORDS:
+        if words[i] in _CAP_PREFIXES and i + 1 < len(words) and words[i + 1] in _NATO_WORDS:
             result.append(_NATO[words[i + 1]].upper())
             i += 2
         elif words[i] in _NATO_WORDS:
@@ -328,12 +380,55 @@ def _make_nato_handler(letter: str):
 for _nato_word, _letter in _NATO.items():
     _EXACT[_nato_word] = _make_nato_handler(_letter)
 
-# "cap <nato>" for uppercase
-for _nato_word, _letter in _NATO.items():
-    _EXACT[f"cap {_nato_word}"] = _make_nato_handler(_letter.upper())
+# "<prefix> <nato>" for uppercase — multiple prefixes since Parakeet
+# often mishears "cap" as "tap", "hat", or "hap"
+for _prefix in ("cap", "big", "tap", "hat", "hap"):
+    for _nato_word, _letter in _NATO.items():
+        _EXACT[f"{_prefix} {_nato_word}"] = _make_nato_handler(_letter.upper())
+
+
+# ── Number words for repeat counts ──
+
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "to": 2, "too": 2, "for": 4,  # common Parakeet misrecognitions
+}
+
+
+def _parse_count(s: str) -> int:
+    """Parse a count from digit string or number word."""
+    if s.isdigit():
+        return int(s)
+    return _NUMBER_WORDS.get(s.lower(), 1)
+
+
+def _repeat_key(key: str, count: int, modifiers: list[str] | None = None) -> None:
+    """Press a key multiple times."""
+    for _ in range(count):
+        actions.press_key(key, modifiers)
 
 
 # ── Parameterized commands ──
+
+# Repeated movement: "go 3 left", "go two word right", "go 5 up"
+@parameterized(r"go (?P<count>\w+) (?P<direction>up|down|left|right)", "go_n_direction")
+def cmd_go_n(count: str, direction: str):
+    n = _parse_count(count)
+    _repeat_key(direction, n)
+
+# Word movement: "word left", "go 2 word left", "3 word right"
+@parameterized(r"(?:go )?(?P<count>\w+ )?word (?P<direction>left|right)", "word_move")
+def cmd_word_move(count: str = "", direction: str = "left"):
+    n = _parse_count(count.strip()) if count and count.strip() else 1
+    mods = ["alt"]
+    _repeat_key(direction, n, mods)
+
+# Repeated delete: "delete 3" or "delete three"
+@parameterized(r"delete (?P<count>\w+)", "delete_n")
+def cmd_delete_n(count: str):
+    n = _parse_count(count)
+    _repeat_key("backspace", n)
 
 @parameterized(r"go to line (?P<number>\d+)", "go_to_line")
 def cmd_go_to_line(number: str):
