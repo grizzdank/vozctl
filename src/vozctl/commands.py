@@ -11,6 +11,9 @@ from vozctl.formatters import try_format
 
 log = logging.getLogger(__name__)
 
+# Set by engine.py at startup for mode-switching commands
+_engine = None
+
 
 @dataclass
 class CommandMatch:
@@ -38,11 +41,16 @@ _EXACT: dict[str, Callable] = {}
 # handler is called with regex match groups as kwargs
 _PARAMETERIZED: list[tuple[re.Pattern, str, Callable]] = []
 
+# ── Commands that work in dictation mode too ────────────────
+_DICTATION_SAFE: set[str] = set()
 
-def exact(name: str):
-    """Decorator to register an exact command."""
+
+def exact(name: str, dictation_safe: bool = False):
+    """Decorator to register an exact command. dictation_safe=True means it works in dictation mode."""
     def decorator(fn: Callable):
         _EXACT[name] = fn
+        if dictation_safe:
+            _DICTATION_SAFE.add(name)
         return fn
     return decorator
 
@@ -56,7 +64,7 @@ def parameterized(pattern: str, name: str):
 
 
 def match(raw_text: str) -> CommandMatch:
-    """Match text against commands. Precedence: exact → parameterized → formatter → dictation."""
+    """Match text against commands (command mode). Precedence: exact → parameterized → formatter → dictation fallback."""
     normalized = _normalize(raw_text)
 
     # 1. Exact match
@@ -84,7 +92,38 @@ def match(raw_text: str) -> CommandMatch:
             kind="formatter",
         )
 
-    # 4. Dictation fallback
+    # 4. NATO sequence — "sierra alpha" → "sa", "cap bravo charlie" → "Bc"
+    nato_result = _try_nato_sequence(normalized)
+    if nato_result:
+        log.info("Command [nato]: %r → %r", normalized, nato_result)
+        text_to_type = nato_result
+        return CommandMatch(
+            name="nato_sequence",
+            handler=lambda: _type_formatted(text_to_type),
+            args={"text": text_to_type},
+            kind="exact",
+        )
+
+    # 5. Dictation fallback (in command mode, engine will ignore this)
+    log.info("Dictation: %r", raw_text)
+    return CommandMatch(
+        name="dictation",
+        handler=lambda: _type_dictation(raw_text),
+        args={"text": raw_text},
+        kind="dictation",
+    )
+
+
+def match_dictation_mode(raw_text: str) -> CommandMatch:
+    """Match in dictation mode: only dictation-safe commands, everything else is typed."""
+    normalized = _normalize(raw_text)
+
+    # Only check dictation-safe commands (mode switches, scratch)
+    if normalized in _EXACT and normalized in _DICTATION_SAFE:
+        log.info("Command [dictation-safe]: %s", normalized)
+        return CommandMatch(name=normalized, handler=_EXACT[normalized], args={}, kind="exact")
+
+    # Everything else is dictation
     log.info("Dictation: %r", raw_text)
     return CommandMatch(
         name="dictation",
@@ -129,6 +168,32 @@ def _scratch_last() -> None:
 
 from vozctl import actions
 
+
+# ── Mode switching (work in both modes) ──
+
+@exact("command mode", dictation_safe=True)
+def cmd_command_mode():
+    if _engine:
+        from vozctl.engine import State
+        _engine.set_state(State.COMMAND)
+
+@exact("dictation mode", dictation_safe=True)
+def cmd_dictation_mode():
+    if _engine:
+        from vozctl.engine import State
+        _engine.set_state(State.DICTATION)
+
+# ── Safety commands (work in both modes) ──
+
+@exact("scratch that", dictation_safe=True)
+def cmd_scratch():
+    _scratch_last()
+
+@exact("scratch", dictation_safe=True)
+def cmd_scratch_alt():
+    _scratch_last()
+
+# ── Standard commands (command mode only) ──
 
 @exact("undo")
 def cmd_undo():
@@ -198,14 +263,6 @@ def cmd_end():
 def cmd_delete():
     actions.press_key("backspace")
 
-@exact("scratch that")
-def cmd_scratch():
-    _scratch_last()
-
-@exact("scratch")
-def cmd_scratch_alt():
-    _scratch_last()
-
 @exact("tab")
 def cmd_tab():
     actions.press_key("tab")
@@ -213,6 +270,67 @@ def cmd_tab():
 @exact("escape")
 def cmd_escape():
     actions.press_key("escape")
+
+@exact("space")
+def cmd_space():
+    actions.press_key("space")
+
+
+# ── NATO alphabet (command mode — type single letters) ──
+
+_NATO_WORDS: set[str] = set()  # populated below
+
+
+def _try_nato_sequence(normalized: str) -> str | None:
+    """Parse a multi-word NATO sequence. Returns typed string or None.
+
+    'sierra alpha' → 'sa'
+    'cap bravo charlie' → 'Bc'
+    'cap alpha cap bravo' → 'AB'
+    """
+    words = normalized.split()
+    if len(words) < 2:
+        return None  # single words handled by exact match
+
+    result = []
+    i = 0
+    while i < len(words):
+        if words[i] == "cap" and i + 1 < len(words) and words[i + 1] in _NATO_WORDS:
+            result.append(_NATO[words[i + 1]].upper())
+            i += 2
+        elif words[i] in _NATO_WORDS:
+            result.append(_NATO[words[i]])
+            i += 1
+        else:
+            return None  # non-NATO word found, not a NATO sequence
+
+    return "".join(result) if result else None
+
+
+_NATO = {
+    "alpha": "a", "bravo": "b", "charlie": "c", "delta": "d",
+    "echo": "e", "foxtrot": "f", "golf": "g", "hotel": "h",
+    "india": "i", "juliet": "j", "kilo": "k", "lima": "l",
+    "mike": "m", "november": "n", "oscar": "o", "papa": "p",
+    "quebec": "q", "romeo": "r", "sierra": "s", "tango": "t",
+    "uniform": "u", "victor": "v", "whiskey": "w", "xray": "x",
+    "yankee": "y", "zulu": "z",
+}
+
+_NATO_WORDS.update(_NATO.keys())
+
+
+def _make_nato_handler(letter: str):
+    def handler():
+        actions.type_text(letter)
+    return handler
+
+for _nato_word, _letter in _NATO.items():
+    _EXACT[_nato_word] = _make_nato_handler(_letter)
+
+# "cap <nato>" for uppercase
+for _nato_word, _letter in _NATO.items():
+    _EXACT[f"cap {_nato_word}"] = _make_nato_handler(_letter.upper())
 
 
 # ── Parameterized commands ──
