@@ -126,8 +126,8 @@ def match(raw_text: str) -> CommandMatch:
         return result
 
     # Split on sentence boundaries and try each chunk
-    # Parakeet adds periods — split the raw text, normalize each part
-    sentences = re.split(r'[.!?]+', raw_text)
+    # Parakeet adds punctuation (periods, commas, etc.) — treat as separators
+    sentences = re.split(r'[.!?,;]+', raw_text)
     sentences = [s.strip() for s in sentences if s.strip()]
 
     if len(sentences) > 1:
@@ -418,18 +418,19 @@ def _repeat_key(key: str, count: int, modifiers: list[str] | None = None) -> Non
 
 # ── Parameterized commands ──
 
-# Repeated movement: "go 3 left", "go two word right", "go 5 up"
-@parameterized(r"go (?P<count>\w+) (?P<direction>up|down|left|right)", "go_n_direction")
-def cmd_go_n(count: str, direction: str):
-    n = _parse_count(count)
-    _repeat_key(direction, n)
-
-# Word movement: "word left", "go 2 word left", "3 word right"
-@parameterized(r"(?:go )?(?P<count>\w+ )?word (?P<direction>left|right)", "word_move")
+# Word movement: "word left", "go 2 words left", "3 word right"
+# MUST be before go_n_direction — otherwise "go word left" matches as go_n(count="word")
+@parameterized(r"(?:go )?(?P<count>\w+ )?words? (?P<direction>left|right)", "word_move")
 def cmd_word_move(count: str = "", direction: str = "left"):
     n = _parse_count(count.strip()) if count and count.strip() else 1
     mods = ["alt"]
     _repeat_key(direction, n, mods)
+
+# Repeated movement: "go 3 left", "go two right", "go 5 up"
+@parameterized(r"go (?P<count>\w+) (?P<direction>up|down|left|right)", "go_n_direction")
+def cmd_go_n(count: str, direction: str):
+    n = _parse_count(count)
+    _repeat_key(direction, n)
 
 # Repeated delete: "delete 3" or "delete three"
 @parameterized(r"delete (?P<count>\w+)", "delete_n")
