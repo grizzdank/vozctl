@@ -235,8 +235,20 @@ def cmd_command_mode():
         from vozctl.engine import State
         _engine.set_state(State.COMMAND)
 
+@exact("commands", dictation_safe=True)
+def cmd_commands():
+    if _engine:
+        from vozctl.engine import State
+        _engine.set_state(State.COMMAND)
+
 @exact("dictation mode", dictation_safe=True)
 def cmd_dictation_mode():
+    if _engine:
+        from vozctl.engine import State
+        _engine.set_state(State.DICTATION)
+
+@exact("typing", dictation_safe=True)
+def cmd_typing():
     if _engine:
         from vozctl.engine import State
         _engine.set_state(State.DICTATION)
@@ -555,6 +567,14 @@ def cmd_word_move(count: str = "", direction: str = "left"):
 def cmd_go_n(count: str, direction: str):
     n = _parse_count(count)
     _repeat_key(direction, n)
+
+# Word delete: "delete two words", "delete 3 words"
+# MUST be before delete_n — otherwise "delete two words" matches as delete_n(count="two")
+@parameterized(r"delete (?P<count>\w+ )?words?", "delete_words")
+def cmd_delete_words(count: str = ""):
+    n = _parse_count(count.strip()) if count and count.strip() else 1
+    for _ in range(n):
+        actions.hotkey("backspace", "alt")
 
 # Repeated delete: "delete 3" or "delete three"
 @parameterized(r"delete (?P<count>\w+)", "delete_n")

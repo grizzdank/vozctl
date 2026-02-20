@@ -64,6 +64,32 @@ class TestWordMove(unittest.TestCase):
         assert result.name == "go_n_direction"
 
 
+class TestDeleteWords(unittest.TestCase):
+    """delete_words must match before delete_n for word-level deletion."""
+
+    def test_delete_two_words(self):
+        result = _match_single(_normalize("delete two words"))
+        assert result is not None
+        assert result.name == "delete_words", f"Expected delete_words, got {result.name}"
+
+    def test_delete_3_words(self):
+        result = _match_single(_normalize("delete 3 words"))
+        assert result is not None
+        assert result.name == "delete_words"
+
+    def test_delete_word_is_exact(self):
+        """'delete word' should hit exact match, not parameterized."""
+        result = _match_single(_normalize("delete word"))
+        assert result is not None
+        assert result.kind == "exact"
+
+    def test_delete_3_still_works(self):
+        """delete_n must still handle character-count deletes."""
+        result = _match_single(_normalize("delete 3"))
+        assert result is not None
+        assert result.name == "delete_n"
+
+
 class TestPunctuationSplit(unittest.TestCase):
     """bd-1v6: Parakeet auto-punctuation must split multi-command phrases."""
 
