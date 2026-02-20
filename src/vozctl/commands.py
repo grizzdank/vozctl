@@ -285,6 +285,22 @@ def cmd_select_all():
 def cmd_new_line():
     actions.press_key("return")
 
+@exact("slap")
+def cmd_slap():
+    actions.press_key("return")
+
+@exact("enter")
+def cmd_enter():
+    actions.press_key("return")
+
+@exact("stomp")
+def cmd_stomp():
+    actions.hotkey("return", "shift")
+
+@exact("newline")
+def cmd_newline():
+    actions.hotkey("return", "shift")
+
 @exact("go up")
 def cmd_up():
     actions.press_key("up")
@@ -313,13 +329,37 @@ def cmd_page_down():
 def cmd_home():
     actions.press_key("home")
 
+@exact("head")
+def cmd_head():
+    actions.hotkey("left", "cmd")
+
 @exact("go end")
 def cmd_end():
     actions.press_key("end")
 
+@exact("tail")
+def cmd_tail():
+    actions.hotkey("right", "cmd")
+
 @exact("delete that")
 def cmd_delete():
     actions.press_key("backspace")
+
+@exact("delete")
+def cmd_delete_single():
+    actions.press_key("backspace")
+
+@exact("backspace")
+def cmd_backspace():
+    actions.press_key("backspace")
+
+@exact("delete word")
+def cmd_delete_word():
+    actions.hotkey("backspace", "alt")
+
+@exact("option delete")
+def cmd_option_delete():
+    actions.hotkey("backspace", "alt")
 
 @exact("tab")
 def cmd_tab():
@@ -332,6 +372,90 @@ def cmd_escape():
 @exact("space")
 def cmd_space():
     actions.press_key("space")
+
+
+# ── System navigation ──────────────────────────────────────
+
+# Tabs
+@exact("next tab")
+def cmd_next_tab():
+    actions.hotkey("]", "cmd", "shift")
+
+@exact("previous tab")
+def cmd_prev_tab():
+    actions.hotkey("[", "cmd", "shift")
+
+@exact("close tab")
+def cmd_close_tab():
+    actions.hotkey("w", "cmd")
+
+# Windows
+@exact("next window")
+def cmd_next_window():
+    actions.hotkey("`", "cmd")
+
+# Apps
+@exact("next app")
+def cmd_next_app():
+    actions.hotkey("tab", "cmd")
+
+@exact("previous app")
+def cmd_prev_app():
+    actions.hotkey("tab", "cmd", "shift")
+
+@exact("switch app")
+def cmd_switch_app():
+    actions.hotkey("tab", "cmd")
+
+# Panes (Ghostty: Opt+hjkl)
+# "pane"/"pain" unreliable in short segments — "focus" as reliable alias
+@exact("pane left")
+def cmd_pane_left():
+    actions.hotkey("h", "alt")
+
+@exact("pain left")
+def cmd_pain_left():
+    actions.hotkey("h", "alt")
+
+@exact("focus left")
+def cmd_focus_left():
+    actions.hotkey("h", "alt")
+
+@exact("pane down")
+def cmd_pane_down():
+    actions.hotkey("j", "alt")
+
+@exact("pain down")
+def cmd_pain_down():
+    actions.hotkey("j", "alt")
+
+@exact("focus down")
+def cmd_focus_down():
+    actions.hotkey("j", "alt")
+
+@exact("pane up")
+def cmd_pane_up():
+    actions.hotkey("k", "alt")
+
+@exact("pain up")
+def cmd_pain_up():
+    actions.hotkey("k", "alt")
+
+@exact("focus up")
+def cmd_focus_up():
+    actions.hotkey("k", "alt")
+
+@exact("pane right")
+def cmd_pane_right():
+    actions.hotkey("l", "alt")
+
+@exact("pain right")
+def cmd_pain_right():
+    actions.hotkey("l", "alt")
+
+@exact("focus right")
+def cmd_focus_right():
+    actions.hotkey("l", "alt")
 
 
 # ── NATO alphabet (command mode — type single letters) ──
