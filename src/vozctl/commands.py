@@ -265,6 +265,52 @@ def cmd_scratch_alt():
 
 # ── Standard commands (command mode only) ──
 
+# ── Terminal essentials ──
+
+@exact("cancel")
+def cmd_cancel():
+    actions.hotkey("c", "ctrl")
+
+@exact("control c")
+def cmd_control_c():
+    actions.hotkey("c", "ctrl")
+
+@exact("clear")
+def cmd_clear():
+    actions.hotkey("l", "ctrl")
+
+@exact("exit")
+def cmd_exit():
+    actions.hotkey("d", "ctrl")
+
+@exact("suspend")
+def cmd_suspend():
+    actions.hotkey("z", "ctrl")
+
+# ── Editor essentials ──
+
+@exact("find")
+def cmd_find():
+    actions.hotkey("f", "cmd")
+
+@exact("find all")
+def cmd_find_all():
+    actions.hotkey("f", "cmd", "shift")
+
+@exact("go to file")
+def cmd_goto_file():
+    actions.hotkey("p", "cmd")
+
+@exact("comment")
+def cmd_comment():
+    actions.hotkey("/", "cmd")
+
+@exact("new tab")
+def cmd_new_tab():
+    actions.hotkey("t", "cmd")
+
+# ── Standard commands ──
+
 @exact("undo")
 def cmd_undo():
     actions.hotkey("z", "cmd")
