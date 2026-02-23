@@ -245,6 +245,10 @@ _DICTATION_PUNCTUATION: dict[str, str] = {
 # Opening brackets don't eat the trailing space — "say open paren" → " ("
 _OPENING_PUNCT = {"(", "[", "{"}
 
+# Ambiguous punctuation words — common English words that could be false positives.
+# These only match as standalone utterances, NOT as trailing words in longer phrases.
+_AMBIGUOUS_PUNCT = {"bang", "dash", "dot", "hyphen", "colon"}
+
 # Max word count in any punctuation phrase (for trailing-match scanning)
 _PUNCT_MAX_WORDS = max(len(k.split()) for k in _DICTATION_PUNCTUATION)
 
@@ -255,6 +259,8 @@ def _match_trailing_punctuation(normalized: str) -> tuple[str, str, str] | None:
     Returns (before_text, punct_word, punct_char) or None.
     'hello world comma' → ('hello world', 'comma', ',')
     'comma' → ('', 'comma', ',')
+
+    Ambiguous words (bang, dash, dot, etc.) only match standalone, not trailing.
     """
     words = normalized.split()
     if not words:
@@ -264,6 +270,9 @@ def _match_trailing_punctuation(normalized: str) -> tuple[str, str, str] | None:
         tail = " ".join(words[-n:])
         if tail in _DICTATION_PUNCTUATION:
             before = " ".join(words[:-n])
+            # Ambiguous words only match standalone (no preceding text)
+            if before and tail in _AMBIGUOUS_PUNCT:
+                continue
             return before, tail, _DICTATION_PUNCTUATION[tail]
     return None
 
