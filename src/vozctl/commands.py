@@ -181,16 +181,31 @@ def match_dictation_mode(raw_text: str) -> CommandMatch:
         log.info("Command [dictation-safe]: %s", normalized)
         return CommandMatch(name=normalized, handler=_EXACT[normalized], args={}, kind="exact")
 
-    # Punctuation: "comma" → backspace trailing space + type ", "
-    if normalized in _DICTATION_PUNCTUATION:
-        char = _DICTATION_PUNCTUATION[normalized]
-        log.info("Dictation [punctuation]: %r → %r", normalized, char)
-        return CommandMatch(
-            name=f"punct:{normalized}",
-            handler=lambda: _type_punctuation(char),
-            args={"char": char},
-            kind="exact",
-        )
+    # Punctuation: "comma" → type ", "
+    # Also handles trailing punctuation: "hello world comma" → type "hello world" + ","
+    punct_match = _match_trailing_punctuation(normalized)
+    if punct_match:
+        before, punct_word, char = punct_match
+        if not before:
+            # Standalone punctuation: "comma" → just punctuation with smart spacing
+            log.info("Dictation [punctuation]: %r → %r", punct_word, char)
+            return CommandMatch(
+                name=f"punct:{punct_word}",
+                handler=lambda: _type_punctuation(char),
+                args={"char": char},
+                kind="exact",
+            )
+        else:
+            # Trailing punctuation: "hello world comma" → type text + punctuation
+            # Reconstruct the raw text prefix (preserve original casing)
+            raw_before = _raw_prefix(raw_text, before)
+            log.info("Dictation [trailing punct]: %r + %r → %r", raw_before, punct_word, char)
+            return CommandMatch(
+                name=f"dictation+punct:{punct_word}",
+                handler=lambda: _type_dictation_then_punct(raw_before, char),
+                args={"text": raw_before, "char": char},
+                kind="dictation",
+            )
 
     # Everything else is dictation
     log.info("Dictation: %r", raw_text)
@@ -230,6 +245,42 @@ _DICTATION_PUNCTUATION: dict[str, str] = {
 # Opening brackets don't eat the trailing space — "say open paren" → " ("
 _OPENING_PUNCT = {"(", "[", "{"}
 
+# Max word count in any punctuation phrase (for trailing-match scanning)
+_PUNCT_MAX_WORDS = max(len(k.split()) for k in _DICTATION_PUNCTUATION)
+
+
+def _match_trailing_punctuation(normalized: str) -> tuple[str, str, str] | None:
+    """Check if normalized text ends with a punctuation word.
+
+    Returns (before_text, punct_word, punct_char) or None.
+    'hello world comma' → ('hello world', 'comma', ',')
+    'comma' → ('', 'comma', ',')
+    """
+    words = normalized.split()
+    if not words:
+        return None
+    # Try longest punctuation phrases first (e.g. "question mark" before "mark")
+    for n in range(min(_PUNCT_MAX_WORDS, len(words)), 0, -1):
+        tail = " ".join(words[-n:])
+        if tail in _DICTATION_PUNCTUATION:
+            before = " ".join(words[:-n])
+            return before, tail, _DICTATION_PUNCTUATION[tail]
+    return None
+
+
+def _raw_prefix(raw_text: str, normalized_before: str) -> str:
+    """Extract the raw (original casing) prefix corresponding to the normalized 'before' text.
+
+    E.g. raw='Hello World, comma.' normalized_before='hello world' → 'Hello World,'
+    We count words to find the split point in the raw text.
+    """
+    if not normalized_before:
+        return ""
+    n_words = len(normalized_before.split())
+    # Split raw text on whitespace, take first n_words, rejoin
+    raw_words = raw_text.split()
+    return " ".join(raw_words[:n_words])
+
 
 _last_typed_len: int = 0
 
@@ -247,6 +298,19 @@ def _type_punctuation(char: str) -> None:
         press_key("backspace")
         type_text(char + " ")
         _last_typed_len = len(char) + 1
+
+
+def _type_dictation_then_punct(text: str, char: str) -> None:
+    """Type dictation text, then append punctuation with smart spacing.
+
+    'hello world' + ',' → 'hello world, '
+    """
+    global _last_typed_len
+    from vozctl.actions import type_text
+    # Type text without trailing space, then punctuation + space
+    output = text + char + " "
+    type_text(output)
+    _last_typed_len = len(output)
 
 
 def _type_formatted(text: str) -> None:
