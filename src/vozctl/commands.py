@@ -181,6 +181,17 @@ def match_dictation_mode(raw_text: str) -> CommandMatch:
         log.info("Command [dictation-safe]: %s", normalized)
         return CommandMatch(name=normalized, handler=_EXACT[normalized], args={}, kind="exact")
 
+    # Punctuation: "comma" → backspace trailing space + type ", "
+    if normalized in _DICTATION_PUNCTUATION:
+        char = _DICTATION_PUNCTUATION[normalized]
+        log.info("Dictation [punctuation]: %r → %r", normalized, char)
+        return CommandMatch(
+            name=f"punct:{normalized}",
+            handler=lambda: _type_punctuation(char),
+            args={"char": char},
+            kind="exact",
+        )
+
     # Everything else is dictation
     log.info("Dictation: %r", raw_text)
     return CommandMatch(
@@ -191,7 +202,51 @@ def match_dictation_mode(raw_text: str) -> CommandMatch:
     )
 
 
+# ── Dictation punctuation ──────────────────────────────────
+# Voice word → character to insert (with smart spacing)
+_DICTATION_PUNCTUATION: dict[str, str] = {
+    "comma": ",",
+    "period": ".",
+    "dot": ".",
+    "full stop": ".",
+    "question mark": "?",
+    "exclamation mark": "!",
+    "exclamation point": "!",
+    "bang": "!",
+    "colon": ":",
+    "semicolon": ";",
+    "semi colon": ";",
+    "dash": "-",
+    "hyphen": "-",
+    "open paren": "(",
+    "close paren": ")",
+    "open bracket": "[",
+    "close bracket": "]",
+    "open brace": "{",
+    "close brace": "}",
+    "ellipsis": "...",
+}
+
+# Opening brackets don't eat the trailing space — "say open paren" → " ("
+_OPENING_PUNCT = {"(", "[", "{"}
+
+
 _last_typed_len: int = 0
+
+
+def _type_punctuation(char: str) -> None:
+    """Type punctuation with smart spacing: eat trailing space, type char + space."""
+    global _last_typed_len
+    from vozctl.actions import press_key, type_text
+    if char in _OPENING_PUNCT:
+        # Opening bracket: keep space before, no space after
+        type_text(char)
+        _last_typed_len = len(char)
+    else:
+        # Closing/normal punct: eat trailing space from previous dictation, add space after
+        press_key("backspace")
+        type_text(char + " ")
+        _last_typed_len = len(char) + 1
 
 
 def _type_formatted(text: str) -> None:
@@ -338,6 +393,10 @@ def cmd_save():
 @exact("select all")
 def cmd_select_all():
     actions.hotkey("a", "cmd")
+
+@exact("select line")
+def cmd_select_line():
+    actions.hotkey("l", "cmd")
 
 @exact("new line")
 def cmd_new_line():
@@ -599,6 +658,20 @@ def _repeat_key(key: str, count: int, modifiers: list[str] | None = None) -> Non
 
 
 # ── Parameterized commands ──
+
+# Select word: "select word left", "select 2 words right"
+# MUST be before word_move — otherwise "select word left" matches word_move with count="select"
+@parameterized(r"select (?P<count>\w+ )?words? (?P<direction>left|right)", "select_word")
+def cmd_select_word(count: str = "", direction: str = "left"):
+    n = _parse_count(count.strip()) if count and count.strip() else 1
+    _repeat_key(direction, n, ["shift", "alt"])
+
+# Select direction: "select left", "select 3 up", "select two down"
+# MUST be before go_n_direction for the same reason
+@parameterized(r"select (?P<count>\w+ )?(?P<direction>up|down|left|right)", "select_direction")
+def cmd_select_direction(count: str = "", direction: str = "left"):
+    n = _parse_count(count.strip()) if count and count.strip() else 1
+    _repeat_key(direction, n, ["shift"])
 
 # Word movement: "word left", "go 2 words left", "3 word right"
 # MUST be before go_n_direction — otherwise "go word left" matches as go_n(count="word")
