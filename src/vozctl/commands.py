@@ -115,6 +115,16 @@ def match(raw_text: str) -> CommandMatch:
     m = re.match(r"^\s*(?:type|insert)\s+(?P<text>.+?)\s*$", raw_text, re.IGNORECASE)
     if m:
         text = m.group("text")
+        # If the remainder is a known key command, press the key instead of typing literal text
+        text_norm = _normalize(text)
+        if text_norm in _INSERT_AS_KEY:
+            log.info("Command [insert-key]: %s", text_norm)
+            return CommandMatch(
+                name=f"insert:{text_norm}",
+                handler=_INSERT_AS_KEY[text_norm],
+                args={},
+                kind="exact",
+            )
         log.info("Command [param-raw]: type_text → %r", text)
         return CommandMatch(name="type_text", handler=cmd_type_text, args={"text": text}, kind="parameterized")
 
@@ -582,6 +592,14 @@ def cmd_escape():
 @exact("space")
 def cmd_space():
     actions.press_key("space")
+
+# Keys that "insert X" should press as a key, not type as literal text
+_INSERT_AS_KEY: dict[str, Callable] = {
+    "space": cmd_space,
+    "tab": cmd_tab,
+    "enter": cmd_enter,
+    "newline": cmd_newline,
+}
 
 
 # ── System navigation ──────────────────────────────────────
