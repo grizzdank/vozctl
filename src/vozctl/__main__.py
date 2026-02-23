@@ -24,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hotkey", type=str, default="ctrl+alt+v", help="Global hotkey to toggle listening (default: ctrl+alt+v).")
     p.add_argument("--model-dir", type=str, default="models", help="Directory containing STT/VAD models (default: models/).")
 
+    # Intent parser
+    p.add_argument("--no-slm", action="store_true", help="Disable SLM (Haiku API) — rules-only mode.")
+
     # Diagnostics
     p.add_argument("--self-test", action="store_true", help="Run self-test checks and exit.")
     p.add_argument("--replay", type=str, metavar="WAV", help="Replay a .wav file through the pipeline instead of live mic.")

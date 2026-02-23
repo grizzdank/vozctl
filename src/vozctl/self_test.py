@@ -20,6 +20,7 @@ def run_self_test(args) -> int:
     results.append(_check_accessibility())
     results.append(_check_vad(args.model_dir))
     results.append(_check_stt(args.model_dir))
+    results.append(_check_intent_parser())
 
     print("=" * 50)
     passed = sum(1 for r in results if r)
@@ -91,3 +92,26 @@ def _check_stt(model_dir: str) -> bool:
         SpeechRecognizer(model_dir)
 
     return _check("STT model loads", check)
+
+
+def _check_intent_parser() -> bool:
+    import os
+
+    def check():
+        from vozctl.intent import IntentParser
+        parser = IntentParser(use_slm=True)
+        # Verify fast path works
+        result = parser.parse("save")
+        assert result.actions[0].name == "save", f"Expected 'save', got {result.actions[0].name}"
+        assert result.source == "fast_path", f"Expected fast_path, got {result.source}"
+
+    ok = _check("Intent parser (fast path)", check)
+
+    # SLM availability is informational, not a failure
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if api_key:
+        print(f"  [INFO] SLM enabled (ANTHROPIC_API_KEY set)")
+    else:
+        print(f"  [INFO] SLM disabled (no ANTHROPIC_API_KEY) — rules-only mode")
+
+    return ok

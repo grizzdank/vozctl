@@ -1,4 +1,4 @@
-"""Core engine: state machine, hotkey, mic → VAD → STT → command dispatch loop."""
+"""Core engine: hotkey, mic → VAD → STT → intent parser dispatch loop."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import numpy as np
 from vozctl.audio import open_stream, resolve_mic, SAMPLE_RATE
 from vozctl.vad import VoiceActivityDetector
 from vozctl.stt import SpeechRecognizer
-from vozctl.commands import match, match_dictation_mode
+from vozctl.intent import IntentParser, execute_actions
 from vozctl.context import get_frontmost_app
 from vozctl.diagnostics import LatencyTracker, LatencyRecord
 
@@ -22,8 +22,7 @@ log = logging.getLogger(__name__)
 
 class State(enum.Enum):
     PAUSED = "PAUSED"
-    COMMAND = "COMMAND"
-    DICTATION = "DICTATION"
+    LISTENING = "LISTENING"
 
 
 class Engine:
@@ -36,21 +35,20 @@ class Engine:
         self._tracker = LatencyTracker()
         self._stop = threading.Event()
 
+        # Intent parser — SLM disabled with --no-slm flag
+        use_slm = not getattr(args, "no_slm", False)
+        self._intent_parser = IntentParser(use_slm=use_slm)
+
         # Resolve mic
         self._device_id = resolve_mic(
             mic_name=getattr(args, "mic_name", None),
             mic_id=getattr(args, "mic_id", None),
         )
 
-    def set_state(self, state: State) -> None:
-        """Set engine state (used by voice commands for mode switching)."""
-        self._state = state
-        log.info("State: %s", state.value)
-
     def _toggle_state(self) -> None:
         if self._state == State.PAUSED:
-            self._state = State.COMMAND
-            log.info("State: COMMAND")
+            self._state = State.LISTENING
+            log.info("State: LISTENING")
         else:
             self._state = State.PAUSED
             log.info("State: PAUSED")
@@ -106,13 +104,9 @@ class Engine:
         stt = SpeechRecognizer(self._args.model_dir)
 
         self._setup_hotkey()
-        self._state = State.COMMAND
-        log.info("State: COMMAND")
-        log.info("Press %s to toggle pause/command", self._args.hotkey)
-
-        # Register engine with commands module for mode switching
-        from vozctl import commands
-        commands._engine = self
+        self._state = State.LISTENING
+        log.info("State: LISTENING")
+        log.info("Press %s to toggle pause/listening", self._args.hotkey)
 
         stream = open_stream(self._device_id, self._audio_callback)
         stream.start()
@@ -155,23 +149,11 @@ class Engine:
                 if not text:
                     continue
 
-                if self._state == State.DICTATION:
-                    cmd = match_dictation_mode(text)
-                else:
-                    cmd = match(text)
-
-                # In command mode, ignore unmatched text (don't type it)
-                if self._state == State.COMMAND and cmd.kind == "dictation":
-                    log.info("Ignored (command mode): %r", text)
-                    continue
-
-                try:
-                    if cmd.args:
-                        cmd.handler(**cmd.args) if cmd.kind == "parameterized" else cmd.handler()
-                    else:
-                        cmd.handler()
-                except Exception as e:
-                    log.error("Command %r failed: %s", cmd.name, e)
+                result = self._intent_parser.parse(text, ctx)
+                execute_actions(result)
+                log.info("Intent: %s [%s] %.0fms",
+                         "+".join(a.name for a in result.actions),
+                         result.source, result.latency_ms)
 
                 dispatch_ts = time.monotonic()
 
@@ -180,6 +162,7 @@ class Engine:
                     stt_elapsed=stt_elapsed,
                     dispatch_ts=dispatch_ts,
                     audio_duration=audio_duration,
+                    intent_elapsed=result.latency_ms / 1000,
                 ))
 
     def replay(self, wav_path: str) -> int:
@@ -224,8 +207,10 @@ class Engine:
             dispatch_ts = time.monotonic()
 
             if text:
-                cmd = match(text)
-                print(f"[{cmd.kind}] {text!r} → {cmd.name}")
+                result = self._intent_parser.parse(text)
+                names = "+".join(a.name for a in result.actions)
+                kinds = ",".join(a.kind for a in result.actions)
+                print(f"[{kinds}] {text!r} → {names} ({result.source} {result.latency_ms:.0f}ms)")
                 segment_count += 1
 
                 self._tracker.record(LatencyRecord(
@@ -233,6 +218,7 @@ class Engine:
                     stt_elapsed=stt_elapsed,
                     dispatch_ts=dispatch_ts,
                     audio_duration=audio_duration,
+                    intent_elapsed=result.latency_ms / 1000,
                 ))
 
         print()

@@ -11,8 +11,8 @@ from vozctl.formatters import try_format
 
 log = logging.getLogger(__name__)
 
-# Set by engine.py at startup for mode-switching commands
-_engine = None
+
+
 
 
 @dataclass
@@ -365,51 +365,17 @@ def _scratch_last() -> None:
 from vozctl import actions
 
 
-# ── Mode switching (work in both modes) ──
+# ── Mode switching (no-ops — modes killed, kept for muscle memory) ──
 
-def _switch_command():
-    if _engine:
-        from vozctl.engine import State
-        _engine.set_state(State.COMMAND)
+def _mode_noop():
+    log.debug("Mode switch ignored (modes removed)")
 
-def _switch_dictation():
-    if _engine:
-        from vozctl.engine import State
-        _engine.set_state(State.DICTATION)
-
-# ── To COMMAND mode — all dictation-safe ──
-@exact("command mode", dictation_safe=True)
-def cmd_command_mode():
-    _switch_command()
-
-@exact("commands", dictation_safe=True)
-def cmd_commands():
-    _switch_command()
-
-@exact("command", dictation_safe=True)
-def cmd_command():
-    _switch_command()
-
-# ── To DICTATION mode — all dictation-safe ──
-@exact("dictation mode", dictation_safe=True)
-def cmd_dictation_mode():
-    _switch_dictation()
-
-@exact("dictation", dictation_safe=True)
-def cmd_dictation():
-    _switch_dictation()
-
-@exact("dictate", dictation_safe=True)
-def cmd_dictate():
-    _switch_dictation()
-
-@exact("typing", dictation_safe=True)
-def cmd_typing():
-    _switch_dictation()
-
-@exact("typing mode", dictation_safe=True)
-def cmd_typing_mode():
-    _switch_dictation()
+for _mode_name in (
+    "command mode", "commands", "command",
+    "dictation mode", "dictation", "dictate",
+    "typing", "typing mode",
+):
+    _EXACT[_mode_name] = _mode_noop
 
 # ── Safety commands (work in both modes) ──
 

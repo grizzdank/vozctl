@@ -17,6 +17,7 @@ class LatencyRecord:
     stt_elapsed: float  # seconds STT took
     dispatch_ts: float  # monotonic time when action dispatched
     audio_duration: float  # seconds of audio in the segment
+    intent_elapsed: float = 0.0  # seconds intent parser took (includes SLM if called)
 
     @property
     def total_latency(self) -> float:
@@ -38,9 +39,10 @@ class LatencyTracker:
     def record(self, rec: LatencyRecord) -> None:
         self._records.append(rec)
         log.info(
-            "Latency: total=%.0fms stt=%.0fms rtf=%.2f audio=%.2fs",
+            "Latency: total=%.0fms stt=%.0fms intent=%.0fms rtf=%.2f audio=%.2fs",
             rec.total_latency * 1000,
             rec.stt_elapsed * 1000,
+            rec.intent_elapsed * 1000,
             rec.rtf,
             rec.audio_duration,
         )
@@ -60,6 +62,7 @@ class LatencyTracker:
 
         latencies = [r.total_latency * 1000 for r in self._records]
         stt_times = [r.stt_elapsed * 1000 for r in self._records]
+        intent_times = [r.intent_elapsed * 1000 for r in self._records]
         rtfs = [r.rtf for r in self._records]
 
         lines = [
@@ -70,6 +73,8 @@ class LatencyTracker:
             f"max={max(latencies):.0f}ms",
             f"  STT time:       p50={_percentile(stt_times, 0.5):.0f}ms  "
             f"p95={_percentile(stt_times, 0.95):.0f}ms",
+            f"  Intent parse:   p50={_percentile(intent_times, 0.5):.0f}ms  "
+            f"p95={_percentile(intent_times, 0.95):.0f}ms",
             f"  RTF:            p50={_percentile(rtfs, 0.5):.2f}  "
             f"p95={_percentile(rtfs, 0.95):.2f}",
         ]
