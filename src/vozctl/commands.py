@@ -357,29 +357,49 @@ from vozctl import actions
 
 # ── Mode switching (work in both modes) ──
 
-@exact("command mode", dictation_safe=True)
-def cmd_command_mode():
+def _switch_command():
     if _engine:
         from vozctl.engine import State
         _engine.set_state(State.COMMAND)
+
+def _switch_dictation():
+    if _engine:
+        from vozctl.engine import State
+        _engine.set_state(State.DICTATION)
+
+# ── To COMMAND mode — all dictation-safe ──
+@exact("command mode", dictation_safe=True)
+def cmd_command_mode():
+    _switch_command()
 
 @exact("commands", dictation_safe=True)
 def cmd_commands():
-    if _engine:
-        from vozctl.engine import State
-        _engine.set_state(State.COMMAND)
+    _switch_command()
 
+@exact("command", dictation_safe=True)
+def cmd_command():
+    _switch_command()
+
+# ── To DICTATION mode — all dictation-safe ──
 @exact("dictation mode", dictation_safe=True)
 def cmd_dictation_mode():
-    if _engine:
-        from vozctl.engine import State
-        _engine.set_state(State.DICTATION)
+    _switch_dictation()
+
+@exact("dictation", dictation_safe=True)
+def cmd_dictation():
+    _switch_dictation()
+
+@exact("dictate", dictation_safe=True)
+def cmd_dictate():
+    _switch_dictation()
 
 @exact("typing", dictation_safe=True)
 def cmd_typing():
-    if _engine:
-        from vozctl.engine import State
-        _engine.set_state(State.DICTATION)
+    _switch_dictation()
+
+@exact("typing mode", dictation_safe=True)
+def cmd_typing_mode():
+    _switch_dictation()
 
 # ── Safety commands (work in both modes) ──
 
