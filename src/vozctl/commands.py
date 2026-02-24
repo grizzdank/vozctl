@@ -347,6 +347,110 @@ def _type_dictation(text: str) -> None:
     _last_typed_len = len(output)
 
 
+_TYPE_SYMBOL_WORDS: dict[str, str] = {
+    "slash": "/",
+    "forward slash": "/",
+    "backslash": "\\",
+    "back slash": "\\",
+    "dot": ".",
+    "period": ".",
+    "dash": "-",
+    "hyphen": "-",
+    "minus": "-",
+    "underscore": "_",
+    "space": " ",
+    "colon": ":",
+    "semicolon": ";",
+    "comma": ",",
+    "quote": '"',
+    "apostrophe": "'",
+    "at": "@",
+    "hash": "#",
+}
+
+
+def _decode_spoken_literal(text: str) -> str | None:
+    """Decode spelled/symbol spoken text for explicit `type` commands.
+
+    Examples:
+      "L O." -> "lo"
+      "lima lima dot" -> "ll."
+      "slash" -> "/"
+    Returns None if text looks like normal phrase dictation.
+    """
+    normalized = _normalize(text)
+    if not normalized:
+        return ""
+
+    words = normalized.split()
+    result: list[str] = []
+    i = 0
+    cap_next = False
+    cap_prefixes = {"cap", "big", "tap", "hat", "hap"}
+
+    while i < len(words):
+        w = words[i]
+
+        # Longest multi-word symbol phrases first
+        if i + 1 < len(words):
+            pair = f"{w} {words[i + 1]}"
+            if pair in _TYPE_SYMBOL_WORDS:
+                result.append(_TYPE_SYMBOL_WORDS[pair])
+                i += 2
+                cap_next = False
+                continue
+
+        if w in cap_prefixes:
+            cap_next = True
+            i += 1
+            continue
+
+        if w in _TYPE_SYMBOL_WORDS:
+            result.append(_TYPE_SYMBOL_WORDS[w])
+            i += 1
+            cap_next = False
+            continue
+
+        if w in _NATO:
+            ch = _NATO[w]
+            result.append(ch.upper() if cap_next else ch)
+            i += 1
+            cap_next = False
+            continue
+
+        if len(w) == 1 and (w.isalnum() or w in "_-./\\"):
+            result.append(w.upper() if (cap_next and w.isalpha()) else w)
+            i += 1
+            cap_next = False
+            continue
+
+        return None
+
+    return "".join(result)
+
+
+def _normalize_type_text(text: str) -> str:
+    """Heuristics for explicit `type ...` payloads.
+
+    Preserve raw text by default, but decode common terminal-style spoken spelling and
+    slash-prefixed commands.
+    """
+    decoded = _decode_spoken_literal(text)
+    if decoded is not None:
+        return decoded
+
+    m = re.match(r"^\s*slash\s+(?P<rest>.+?)\s*$", text, re.IGNORECASE)
+    if m:
+        rest = m.group("rest")
+        rest_decoded = _decode_spoken_literal(rest)
+        if rest_decoded is not None:
+            return "/" + rest_decoded
+        # Fall back to normalized command-ish text (Parakeet often adds trailing punctuation)
+        return "/" + _normalize(rest).replace(" ", " ")
+
+    return text
+
+
 def _scratch_last() -> None:
     """Delete the last typed text by sending backspaces."""
     global _last_typed_len
@@ -839,4 +943,4 @@ def cmd_word_move_got(count: str = "", direction: str = "left"):
 @parameterized(r"(?:type|insert) (?P<text>.+)", "type_text")
 def cmd_type_text(text: str):
     """Explicitly type arbitrary text."""
-    actions.type_text(text)
+    actions.type_text(_normalize_type_text(text))
