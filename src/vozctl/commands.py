@@ -793,6 +793,41 @@ def cmd_select_line(number: str):
     cmd_go_to_line(number)
     actions.hotkey("l", "cmd")
 
+# ── Natural language navigation aliases ──
+# These catch common Parakeet phrasings to avoid SLM round-trip (~1200ms saved each).
+
+# "beginning of the line", "go to the beginning", "go to the start", "front of the line"
+@parameterized(r"(?:go (?:to )?)?(?:the )?(?:beginning|front|start)(?: of (?:the )?line)?$", "head_natural")
+def cmd_head_natural():
+    actions.hotkey("left", "cmd")
+
+# "end of the line", "go to the end", "back of the line"
+@parameterized(r"(?:go (?:to )?)?(?:the )?(?:end|back)(?: of (?:the )?line)?$", "tail_natural")
+def cmd_tail_natural():
+    actions.hotkey("right", "cmd")
+
+# "top of the file", "go to the top", "beginning of the file"
+@parameterized(r"(?:go (?:to )?)?(?:the )?(?:top|beginning|start)(?: of (?:the )?file)?$", "go_top")
+def cmd_go_top():
+    actions.hotkey("up", "cmd")
+
+# "bottom of the file", "go to the bottom", "end of the file"
+@parameterized(r"(?:go (?:to )?)?(?:the )?(?:bottom)(?: of (?:the )?file)?$", "go_bottom")
+def cmd_go_bottom():
+    actions.hotkey("down", "cmd")
+
+# "got N direction" — Parakeet consistently hears "got" instead of "go"
+@parameterized(r"got (?P<count>\w+) (?P<direction>up|down|left|right)", "go_n_direction_got")
+def cmd_go_n_got(count: str, direction: str):
+    n = _parse_count(count)
+    _repeat_key(direction, n)
+
+# "got word(s) direction" — Parakeet "got" variant for word movement
+@parameterized(r"got (?P<count>\w+ )?words? (?P<direction>left|right)", "word_move_got")
+def cmd_word_move_got(count: str = "", direction: str = "left"):
+    n = _parse_count(count.strip()) if count and count.strip() else 1
+    _repeat_key(direction, n, ["alt"])
+
 @parameterized(r"(?:type|insert) (?P<text>.+)", "type_text")
 def cmd_type_text(text: str):
     """Explicitly type arbitrary text."""

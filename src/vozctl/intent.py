@@ -358,6 +358,11 @@ Examples:
                 candidates.append(f"delete {count} words")
                 candidates.append(f"delete {count}")
                 candidates.append(f"select {count} {direction}")
+            elif count and not direction:
+                # SLM sometimes omits direction — try with default "left"
+                candidates.append(f"select {count} words left")
+                candidates.append(f"delete {count} words")
+                candidates.append(f"delete {count}")
 
         for candidate in candidates:
             for pattern, pname, handler in _PARAMETERIZED:
