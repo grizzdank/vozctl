@@ -588,6 +588,14 @@ def cmd_close_tab():
 def cmd_next_window():
     actions.hotkey("`", "cmd")
 
+@exact("switch window")
+def cmd_switch_window():
+    actions.hotkey("`", "cmd")
+
+@exact("change window")
+def cmd_change_window():
+    actions.hotkey("`", "cmd")
+
 # Apps
 @exact("next app")
 def cmd_next_app():

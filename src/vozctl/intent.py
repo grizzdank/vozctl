@@ -74,6 +74,7 @@ class IntentParser:
         "type", "insert", "scratch", "find", "comment",
         "snake", "camel", "pascal", "kebab", "constant",
         "beginning", "front", "back", "start", "top", "bottom",
+        "switch", "change", "next", "previous",
     })
 
     def _has_command_words(self, transcript: str) -> bool:
