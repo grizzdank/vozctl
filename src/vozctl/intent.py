@@ -39,6 +39,60 @@ class IntentResult:
     latency_ms: float = 0.0
 
 
+class SLMProvider:
+    """Abstract SLM provider interface for intent parsing."""
+
+    name = "unknown"
+
+    def is_available(self) -> bool:
+        return False
+
+    def complete(self, *, system_prompt: str, transcript: str) -> str | None:
+        raise NotImplementedError
+
+
+class NullSLMProvider(SLMProvider):
+    """Disabled/unavailable provider."""
+
+    name = "disabled"
+
+    def complete(self, *, system_prompt: str, transcript: str) -> str | None:
+        return None
+
+
+class AnthropicSLMProvider(SLMProvider):
+    """Current production SLM provider (temporary adapter)."""
+
+    name = "anthropic_haiku"
+
+    def __init__(self):
+        self._client = None
+        self._enabled = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        if not self._enabled:
+            return
+        try:
+            import anthropic
+            self._client = anthropic.Anthropic()
+        except Exception as e:
+            log.warning("Anthropic provider unavailable: %s", e)
+            self._enabled = False
+
+    def is_available(self) -> bool:
+        return self._enabled and self._client is not None
+
+    def complete(self, *, system_prompt: str, transcript: str) -> str | None:
+        if not self.is_available():
+            return None
+        response = self._client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=256,
+            system=system_prompt,
+            messages=[{"role": "user", "content": transcript}],
+            timeout=3.0,  # 3s hard timeout (covers network + generation)
+        )
+        return response.content[0].text.strip()
+
+
 # ── Intent Parser ─────────────────────────────────────────────
 
 
@@ -49,18 +103,13 @@ class IntentParser:
         use_slm: Whether to call the SLM for ambiguous utterances.
     """
 
-    def __init__(self, use_slm: bool = True):
-        self._use_slm = use_slm and bool(os.environ.get("ANTHROPIC_API_KEY"))
-        self._slm_client = None
+    def __init__(self, use_slm: bool = True, slm_provider: SLMProvider | None = None):
+        self._slm_provider = slm_provider if slm_provider is not None else AnthropicSLMProvider()
+        self._use_slm = use_slm and self._slm_provider.is_available()
         if self._use_slm:
-            try:
-                import anthropic
-                self._slm_client = anthropic.Anthropic()
-                log.info("SLM enabled (Haiku API)")
-            except Exception as e:
-                log.warning("SLM unavailable: %s — running rules-only", e)
-                self._use_slm = False
+            log.info("SLM enabled (%s)", self._slm_provider.name)
         else:
+            self._slm_provider = NullSLMProvider()
             log.info("SLM disabled — running rules-only")
 
     # Words that suggest the utterance might contain a command.
@@ -244,19 +293,14 @@ class IntentParser:
 
     def _slm_path(self, transcript: str, context) -> IntentResult | None:
         """Call SLM to parse ambiguous/mixed utterances into action sequences."""
-        if not self._slm_client:
+        if not self._slm_provider.is_available():
             return None
 
         try:
             system_prompt = self._build_system_prompt(context)
-            response = self._slm_client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=256,
-                system=system_prompt,
-                messages=[{"role": "user", "content": transcript}],
-                timeout=3.0,  # 3s hard timeout (covers network + generation)
-            )
-            raw = response.content[0].text.strip()
+            raw = self._slm_provider.complete(system_prompt=system_prompt, transcript=transcript)
+            if not raw:
+                return None
             actions = self._parse_slm_response(raw, transcript)
             if actions:
                 log.info("Intent [slm]: %d actions from %r", len(actions), transcript)

@@ -2,19 +2,27 @@
 
 ## Architecture
 
-### Two-Model Pipeline
+### Current Pipeline (Python Prototype)
 
 ```
-Voice → [Parakeet STT] → raw text → [Decision SLM] → action
-                                          ↑
-                                   window context
-                                   (app, cursor, mode, language)
+Mic → [Silero VAD] → speech segments → [Parakeet STT] → transcript
+                                                   ↓
+                                    [Intent parser / command matcher]
+                                     exact -> parameterized -> formatter
+                                     -> NATO -> multi-sentence split
+                                                   ↓
+                                  optional SLM (ambiguous/mixed utterances)
+                                                   ↓
+                                           action dispatch (CGEvent)
 ```
 
-1. **Parakeet TDT 0.6B** — local speech-to-text via sherpa-onnx. Fast, accurate, private.
-2. **Decision SLM** — tiny model that classifies intent (command vs dictation) and formats output based on active window context.
+Notes:
+1. **VAD + STT** are local today (sherpa-onnx).
+2. **Intent parsing** is primarily rule-based fast path, with optional SLM fallback.
+3. **Current SLM path** uses Anthropic Haiku API as a transitional adapter.
+4. **Target SLM direction** is local inference (Qwen3-0.6B candidate) via Rust/Candle behind a provider boundary.
 
-### System Diagram
+### System Diagram (Current + Near-Term)
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -22,100 +30,107 @@ Voice → [Parakeet STT] → raw text → [Decision SLM] → action
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
-│         Audio Capture Layer (platform-specific)  │
-│   CoreAudio / WASAPI / PulseAudio / ALSA        │
+│      Audio Capture Layer (current: sounddevice)   │
+│     planned Rust hot path: cpal / native APIs     │
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
-│              VAD (Silero via sherpa-onnx)         │
+│           VAD (Silero via sherpa-onnx)            │
 │         Voice activity → audio segments          │
 └──────────────────────┬──────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────┐
-│         STT Engine (sherpa-onnx)                 │
-│   Models: Parakeet TDT 0.6B / Whisper / custom  │
-│   Batch mode. Local-only.                        │
+│              STT Engine (sherpa-onnx)            │
+│   Current model: Parakeet TDT 0.6B int8          │
+│   Batch mode per VAD segment. Local-only.        │
 └──────────────────────┬──────────────────────────┘
                        │ raw transcript
 ┌──────────────────────▼──────────────────────────┐
-│        Command Parser / Grammar Engine           │
-│   Mode detection: command vs. dictation          │
-│   Grammar rules, formatters                      │
-│   (snake_case, camelCase, etc.)                  │
+│           Intent Parser / Grammar Engine          │
+│   Fast path rules + formatters + NATO            │
+│   Optional SLM for ambiguous mixed utterances    │
+│   Multi-sentence split on STT punctuation        │
 └─────────┬────────────────────────┬──────────────┘
           │ command                 │ dictation
 ┌─────────▼──────────┐  ┌─────────▼──────────────┐
 │  Action Dispatcher  │  │   Text Output Layer    │
-│  OS automation      │  │   CGEvent key injection│
-│  LLM intent bridge  │  │                        │
+│  OS automation      │  │   macOS CGEvent keys   │
+│  app context hooks  │  │   (PyObjC Quartz)      │
 └────────────────────┘  └────────────────────────┘
 ```
 
 ### Key Technical Decisions
 
-- **Phase 0:** Python (speed to dogfood). Rust rewrite planned for Phase 1+.
+- **Current runtime:** Python (speed to dogfood and iterate on command UX).
+- **Rust migration:** planned as a scoped hot-path rewrite (audio/VAD/STT), likely hybrid before full rewrite.
 - **STT:** sherpa-onnx with Parakeet TDT 0.6B (batch, not streaming)
 - **VAD:** Silero via sherpa-onnx
 - **Key injection:** macOS CGEvent (Phase 0). Cross-platform abstraction later.
 - **Command matching:** exact → parameterized → formatter → NATO → dictation fallback
+- **SLM today:** optional Anthropic API fallback (transitional adapter)
+- **SLM target:** local Qwen3-0.6B via Candle; keep provider interface stable while Python command UX evolves
+- **Issue tracking:** `br` (beads-rust) is the source of truth for execution order
 
 ---
 
 ## Phases
 
-### Phase 0: Spike ✅ (In Progress)
+### Phase 0: Dogfood Prototype (In Progress)
 
 **Goal:** Working proof of concept. "Say 'go to line 50' and it works."
 
 - [x] sherpa-onnx + Parakeet TDT integration
 - [x] Silero VAD → batch STT pipeline
-- [x] ~20 hardcoded commands (navigation, mode switching, formatters)
-- [x] Hotkey toggle (Ctrl+Shift+V)
+- [x] Command registry with exact + parameterized + formatter + NATO matching
+- [x] Global hotkey toggle (default `ctrl+alt+v`)
 - [x] macOS CGEvent key injection
-- [x] State machine: PAUSED ↔ COMMAND ↔ DICTATION
+- [x] Unified intent parser (rules fast path + fallback dictation + optional SLM)
 - [x] NATO alphabet for spelling
+- [x] Multi-sentence split for Parakeet auto-punctuation
 - [x] Self-test (`--self-test`)
+- [x] Replay mode (`--replay`) and latency diagnostics
 - [ ] Latency target: <800ms p95
 
-**Scope:** macOS only, single mic, Python, no grammars.
+**Scope:** macOS only, Python runtime, local VAD/STT, hardcoded command registry.
 
 ### Phase 1: Core MVP (6–8 weeks)
 
 **Goal:** Usable daily driver for enthusiasts.
 
-- [ ] Vim voice grammar — natural phrases → vim motions ([#1](https://github.com/grizzdank/vozctl/issues/1))
-- [ ] Custom command definitions (YAML or Python)
-- [ ] Improved mode switching (confidence-based)
-- [ ] Menubar app (macOS)
-- [ ] User-configurable mic selection
-- [ ] Expanded command set (50+ covering 80% of use cases)
-- [ ] Rust rewrite of audio + VAD hot path (latency)
+- [ ] Fix priority bugs in command matching and speech misrecognitions (`bd-2a1`, `bd-270`)
+- [ ] Local SLM migration (Anthropic -> local Qwen3-0.6B candidate via Candle) (`bd-078`) and async intent parsing (`bd-c2f`)
+- [ ] Expand fast-path patterns to reduce SLM calls (`bd-6e7`)
+- [ ] Menubar app with status indicator (`bd-2t1`)
+- [ ] Streaming partial transcripts / visual feedback (`bd-2hu`)
+- [ ] App-specific grammar/context switching (`bd-9z9`)
+- [ ] Declarative `.voz` grammar files (`bd-250`)
+- [ ] Rust hot-path spike: audio/VAD/STT pipeline with Python intent/actions retained (`bd-3af`, scoped)
+- [ ] Keep SLM provider boundary stable so local Candle integration can land before/alongside broader Rust migration
 
 ### Phase 2: IDE Integration (8–12 weeks)
 
-- [ ] Neovim plugin (priority — vim grammar from Phase 1)
-- [ ] Zed integration (via remote commands / keystroke simulation)
-- [ ] Command/dictation mode switching via Decision SLM
-- [ ] Code-aware formatting (language-dependent)
-- [ ] Context-aware output (terminal vs editor vs prose)
+- [ ] VS Code extension / LSP-aware voice commands (`bd-2m5`)
+- [ ] Neovim plugin (`bd-1bz`)
+- [ ] JetBrains plugin (`bd-1sw`)
+- [ ] Code-aware formatting from editor context (`bd-17r`)
+- [ ] LLM intent bridge for voice-to-code tasks (`bd-2do`)
 
 ### Phase 3: Polish & Platform (3–6 months)
 
-- [ ] Linux support
-- [ ] Windows support
-- [ ] JetBrains plugin
-- [ ] LLM intent bridge ("refactor this function" → action)
-- [ ] Custom wake words
-- [ ] User-trainable vocabulary
-- [ ] Multi-language dictation (Parakeet v3)
+- [ ] Linux support (audio + injection stack) (`bd-3eo`)
+- [ ] Windows support (audio + injection stack) (`bd-dqh`)
+- [ ] Custom wake word support (`bd-37s`)
+- [ ] User-trainable vocabulary / pronunciations (`bd-2di`)
+- [ ] Noise trigger support (`bd-c4u`)
+- [ ] Cloud STT fallback option (`bd-319`)
 
 ### Phase 4: Community & Scale (6–12 months)
 
-- [ ] Shareable command packs
-- [ ] Community command repository
-- [ ] Cloud model option (for users without GPU)
-- [ ] Team/enterprise features
-- [ ] Mobile companion
+- [ ] Team dictionaries and shared command sets (`bd-c7e`)
+- [ ] Compliance logging / audit trail (`bd-2k2`)
+- [ ] Enterprise auth / SSO (`bd-jhw`)
+- [ ] Mobile companion (`bd-36d`)
+- [ ] Shareable command packs / community command repository
 
 ---
 
@@ -124,9 +139,9 @@ Voice → [Parakeet STT] → raw text → [Decision SLM] → action
 | Component | Complexity | Notes |
 |-----------|-----------|-------|
 | Audio capture | 🔴 High | Platform-specific. macOS permissions, Windows audio routing, Linux fragmentation |
-| STT integration | 🟢 Low | sherpa-onnx does the heavy lifting |
-| Command grammar parser | 🟡 Medium | Need extensible format without reimplementing Talon internals |
-| Mode switching | 🔴 High | #1 UX challenge. False positives destroy trust |
+| STT integration | 🟡 Medium | sherpa-onnx is working in Python; Rust crate/runtime parity is the real risk |
+| Command grammar parser | 🟡 Medium | Rich rule behavior exists; migration risk is regressions, not greenfield design |
+| Intent parsing / SLM | 🔴 High | Latency, ambiguity handling, and fallback behavior determine UX trust |
 | IDE plugins | 🟡 Medium | Neovim straightforward, JetBrains less so |
 | Cross-platform | 🔴 High | Audio, accessibility APIs, text injection all differ per OS |
 | LLM integration | 🟡 Medium | API calls easy; reliable intent extraction from noisy speech is hard |
