@@ -121,11 +121,17 @@ class Engine:
 
     def _process_loop(self, vad: VoiceActivityDetector, stt: SpeechRecognizer) -> None:
         """Main processing loop: drain audio queue, run VAD, transcribe, dispatch."""
+        _block_count = 0
         while not self._stop.is_set():
             try:
                 block = self._audio_q.get(timeout=0.1)
             except queue.Empty:
                 continue
+
+            _block_count += 1
+            if _block_count % 100 == 1:
+                peak = float(max(abs(block.min()), abs(block.max())))
+                log.debug("Audio block #%d: peak=%.4f qsize=%d", _block_count, peak, self._audio_q.qsize())
 
             if self._state == State.PAUSED:
                 continue

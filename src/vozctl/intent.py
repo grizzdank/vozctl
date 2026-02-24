@@ -63,6 +63,25 @@ class IntentParser:
         else:
             log.info("SLM disabled — running rules-only")
 
+    # Words that suggest the utterance might contain a command.
+    # If none of these appear, skip SLM and go straight to dictation.
+    _COMMAND_WORDS = frozenset({
+        "go", "move", "delete", "select", "save", "undo", "redo",
+        "copy", "cut", "paste", "tab", "close", "open", "new",
+        "word", "words", "line", "head", "tail", "home", "end",
+        "up", "down", "left", "right", "page", "focus",
+        "cancel", "escape", "enter", "space", "backspace",
+        "type", "insert", "scratch", "find", "comment",
+        "snake", "camel", "pascal", "kebab", "constant",
+        "beginning", "front", "back", "start", "top", "bottom",
+    })
+
+    def _has_command_words(self, transcript: str) -> bool:
+        """Check if transcript contains any command-like words."""
+        from vozctl.commands import _normalize
+        words = set(_normalize(transcript).split())
+        return bool(words & self._COMMAND_WORDS)
+
     def parse(self, transcript: str, context=None) -> IntentResult:
         """Parse a transcript into a list of actions.
 
@@ -78,8 +97,8 @@ class IntentParser:
             result.latency_ms = (time.monotonic() - t0) * 1000
             return result
 
-        # SLM slow path — only for mixed/ambiguous utterances
-        if self._use_slm:
+        # SLM slow path — only if utterance contains command-like words
+        if self._use_slm and self._has_command_words(transcript):
             result = self._slm_path(transcript, context)
             if result:
                 result.latency_ms = (time.monotonic() - t0) * 1000
@@ -234,7 +253,7 @@ class IntentParser:
                 max_tokens=256,
                 system=system_prompt,
                 messages=[{"role": "user", "content": transcript}],
-                timeout=0.6,  # 600ms hard timeout
+                timeout=3.0,  # 3s hard timeout (covers network + generation)
             )
             raw = response.content[0].text.strip()
             actions = self._parse_slm_response(raw, transcript)
@@ -256,16 +275,16 @@ class IntentParser:
 
 Given a voice transcript, output ONLY a JSON array of actions. No explanation.
 
-Commands available:
-- Navigation: go {{up,down,left,right}}, go N {{direction}}, word {{left,right}}, N words {{direction}}, page up/down, head, tail, home, end, go to line N
-- Editing: delete, delete word, delete N, delete N words, backspace, undo, redo, cut, copy, paste, save
-- Selection: select all, select line, select word {{direction}}, select N {{direction}}
-- Text: type <text>, insert <text>
-- Formatting: snake/camel/pascal/kebab/constant <words> (outputs formatted identifier)
-- Terminal: cancel, clear, exit, tab, escape, enter, space
-- Tabs: new tab, close tab, next tab, previous tab
-- Panes: focus {{left,right,up,down}}
-- Safety: scratch that (undo last typed text)
+Commands (use these EXACT names in JSON output):
+- Navigation: "go up", "go down", "go left", "go right", "go N direction" (e.g. "go 3 left"), "word left", "word right", "N words direction" (e.g. "two words left"), "page up", "page down", "head" (start of line), "tail" (end of line), "go home", "go end", "go to line N"
+- Editing: "delete", "delete word", "delete N" (e.g. "delete 3"), "delete N words" (e.g. "delete two words"), "backspace", "undo", "redo", "cut", "copy", "paste", "save"
+- Selection: "select all", "select line", "select word left/right", "select N direction"
+- Text: "type <text>" or dictation
+- Formatting: "snake <words>", "camel <words>", "pascal <words>", "kebab <words>", "constant <words>"
+- Terminal: "cancel", "clear", "exit", "tab", "escape", "enter", "space"
+- Tabs: "new tab", "close tab", "next tab", "previous tab"
+- Panes: "focus left", "focus right", "focus up", "focus down"
+- Safety: "scratch that"
 
 Action JSON format:
 {{"kind":"command","name":"<command name>","args":{{}}}}
@@ -316,22 +335,21 @@ Examples:
         name = item.get("name", "")
         args = item.get("args", {})
         normalized = _normalize(name)
+        # SLM often returns underscores where registry has spaces
+        with_spaces = normalized.replace("_", " ")
 
-        # Try exact match first
-        if normalized in _EXACT:
-            return Action(kind="command", name=normalized, handler=_EXACT[normalized])
+        # Try exact match — both underscore and space variants
+        for candidate_name in (normalized, with_spaces):
+            if candidate_name in _EXACT:
+                return Action(kind="command", name=candidate_name, handler=_EXACT[candidate_name])
 
         # Try parameterized — reconstruct the full command string for regex matching
-        # e.g. name="go_n_direction" args={"count":"three","direction":"up"} → "go three up"
-        # Build candidate strings from the args
-        candidates = [normalized]
+        candidates = [normalized, with_spaces]
         if args:
-            # Try "name arg1 arg2" style
             arg_str = " ".join(str(v) for v in args.values())
             candidates.append(f"{normalized} {arg_str}")
-            # Try just the arg values joined (for commands like "delete two words")
+            candidates.append(f"{with_spaces} {arg_str}")
             candidates.append(arg_str)
-            # Try reconstructing common patterns
             count = args.get("count", "")
             direction = args.get("direction", "")
             if count and direction:
