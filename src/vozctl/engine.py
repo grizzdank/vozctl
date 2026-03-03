@@ -35,9 +35,13 @@ class Engine:
         self._tracker = LatencyTracker()
         self._stop = threading.Event()
 
-        # Intent parser — SLM disabled with --no-slm flag
-        use_slm = not getattr(args, "no_slm", False)
-        self._intent_parser = IntentParser(use_slm=use_slm)
+        # Intent parser — select SLM provider via --slm / --no-slm
+        slm_mode = getattr(args, "slm", "local")
+        if getattr(args, "no_slm", False):
+            slm_mode = "none"
+        from vozctl.intent import create_slm_provider
+        provider = create_slm_provider(slm_mode, args.model_dir)
+        self._intent_parser = IntentParser(use_slm=(slm_mode != "none"), slm_provider=provider)
 
         # Resolve mic
         self._device_id = resolve_mic(

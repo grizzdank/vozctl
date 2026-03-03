@@ -60,6 +60,25 @@ class NullSLMProvider(SLMProvider):
         return None
 
 
+def create_slm_provider(mode: str, model_dir: str = "models") -> SLMProvider:
+    """Factory: create the right SLM provider based on mode string."""
+    if mode == "none":
+        return NullSLMProvider()
+    elif mode == "haiku":
+        return AnthropicSLMProvider()
+    elif mode == "local":
+        from vozctl.slm_local import LlamaServer, LocalSLMProvider
+        model_path = os.path.join(model_dir, "qwen3.5-0.8b-q4_k_m.gguf")
+        server = LlamaServer(model_path)
+        if server.start():
+            return LocalSLMProvider(server)
+        log.warning("Local SLM failed to start — falling back to rules-only")
+        return NullSLMProvider()
+    else:
+        log.warning("Unknown SLM mode %r — disabling", mode)
+        return NullSLMProvider()
+
+
 class AnthropicSLMProvider(SLMProvider):
     """Current production SLM provider (temporary adapter)."""
 

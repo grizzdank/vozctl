@@ -24,8 +24,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hotkey", type=str, default="ctrl+alt+v", help="Global hotkey to toggle listening (default: ctrl+alt+v).")
     p.add_argument("--model-dir", type=str, default="models", help="Directory containing STT/VAD models (default: models/).")
 
-    # Intent parser
-    p.add_argument("--no-slm", action="store_true", help="Disable SLM (Haiku API) — rules-only mode.")
+    # Intent parser / SLM
+    p.add_argument("--slm", choices=["local", "haiku", "none"], default="local",
+                   help="SLM provider (default: local).")
+    p.add_argument("--no-slm", action="store_true", help="Disable SLM — rules-only mode (same as --slm none).")
 
     # Diagnostics
     p.add_argument("--self-test", action="store_true", help="Run self-test checks and exit.")
