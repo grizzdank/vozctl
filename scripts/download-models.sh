@@ -71,6 +71,23 @@ else
     ok "Parakeet TDT extracted and flattened"
 fi
 
+# ── Optional: Download Qwen3.5-0.8B GGUF for local SLM ──────
+SLM_MODEL="qwen3.5-0.8b-q4_k_m.gguf"
+SLM_URL="https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf"
+
+if [[ "${DOWNLOAD_SLM:-0}" == "1" ]] || [[ "${2:-}" == "--slm" ]] || [[ "${1:-}" == "--slm" ]]; then
+    echo ""
+    echo "=== Local SLM (Qwen3.5-0.8B) ==="
+    download "$SLM_URL" "$MODELS_DIR/$SLM_MODEL"
+    if [[ -f "$MODELS_DIR/$SLM_MODEL" ]]; then
+        size=$(du -h "$MODELS_DIR/$SLM_MODEL" | cut -f1)
+        ok "SLM model downloaded ($size)"
+    fi
+else
+    echo ""
+    info "Skipping local SLM model. To download: $0 --slm (or DOWNLOAD_SLM=1)"
+fi
+
 # ── Verify all files present ──────────────────────────────────
 echo ""
 echo "=== Verification ==="

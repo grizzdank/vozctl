@@ -1,6 +1,7 @@
 # Models (large files)
 models/*.onnx
 models/*.bin
+models/*.gguf
 models/*.pt
 models/*.tar.bz2
 models/SHA256SUMS
