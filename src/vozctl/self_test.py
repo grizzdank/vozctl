@@ -21,6 +21,7 @@ def run_self_test(args) -> int:
     results.append(_check_vad(args.model_dir))
     results.append(_check_stt(args.model_dir))
     results.append(_check_intent_parser())
+    _check_slm_availability(args.model_dir)
 
     print("=" * 50)
     passed = sum(1 for r in results if r)
@@ -107,11 +108,32 @@ def _check_intent_parser() -> bool:
 
     ok = _check("Intent parser (fast path)", check)
 
-    # SLM availability is informational, not a failure
+    return ok
+
+
+def _check_slm_availability(model_dir: str) -> None:
+    """Informational: report which SLM backends are available."""
+    import os
+    import shutil
+
+    print("\n  SLM providers:")
+
+    # Local SLM
+    model_path = os.path.join(model_dir, "qwen3.5-0.8b-q4_k_m.gguf")
+    has_binary = shutil.which("llama-server") is not None
+    has_model = os.path.isfile(model_path)
+    if has_binary and has_model:
+        print("  [INFO] local: ready (llama-server + model found)")
+    elif has_binary:
+        print(f"  [INFO] local: model missing ({model_path})")
+    elif has_model:
+        print("  [INFO] local: llama-server not in PATH (brew install llama.cpp)")
+    else:
+        print("  [INFO] local: not available (no binary or model)")
+
+    # Haiku API
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if api_key:
-        print(f"  [INFO] SLM enabled (ANTHROPIC_API_KEY set)")
+        print("  [INFO] haiku: ready (ANTHROPIC_API_KEY set)")
     else:
-        print(f"  [INFO] SLM disabled (no ANTHROPIC_API_KEY) — rules-only mode")
-
-    return ok
+        print("  [INFO] haiku: no ANTHROPIC_API_KEY")

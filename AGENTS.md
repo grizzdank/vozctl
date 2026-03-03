@@ -7,7 +7,7 @@ Offline voice control for developers: mic → Silero VAD → Parakeet TDT STT �
 - **Package**: `src/vozctl/`, run via `python -m vozctl`
 - **Venv**: `venv/` (always use virtual env, never global pip)
 - **Models**: `models/` (downloaded via `./scripts/download-models.sh`)
-- **State machine**: PAUSED ↔ COMMAND ↔ DICTATION
+- **State machine**: PAUSED ↔ LISTENING
 - **Command precedence**: exact → parameterized → formatter → NATO sequence → dictation fallback
 - **Multi-sentence**: VAD segments are split on `.!?` and each part matched independently
 
@@ -45,7 +45,9 @@ Issues tracked via `br` (beads-rust). Run `br list` or `br ready` to see current
 | `actions.py` | macOS CGEvent key injection, accessibility gating |
 | `context.py` | Frontmost app detection (bundle ID, window title) |
 | `diagnostics.py` | Latency tracking, p95 reporting |
-| `self_test.py` | `--self-test` checks (models, audio, accessibility) |
+| `intent.py` | Intent parser, SLM provider interface, `create_slm_provider()` factory |
+| `slm_local.py` | Local SLM: LlamaServer (subprocess mgmt) + LocalSLMProvider (HTTP client) |
+| `self_test.py` | `--self-test` checks (models, audio, accessibility, SLM availability) |
 
 ## Conventions
 - Commit messages: no "Co-Authored-By" or "Generated with Claude" lines
